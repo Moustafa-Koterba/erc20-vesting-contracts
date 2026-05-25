@@ -9,13 +9,6 @@ const DURATION_DAYS = 1460;
 const CLIFF_SECONDS = BigInt(CLIFF_DAYS * 24 * 60 * 60);
 const DURATION_SECONDS = BigInt(DURATION_DAYS * 24 * 60 * 60);
 
-async function predictNextContractAddress(
-  signerAddress: string,
-): Promise<string> {
-  const nonce = await ethers.provider.getTransactionCount(signerAddress);
-  return ethers.getCreateAddress({ from: signerAddress, nonce: nonce + 1 });
-}
-
 describe("VestingWallet", function () {
   async function deployCleanFixture() {
     const [owner, beneficiary, stranger] = await ethers.getSigners();
@@ -26,10 +19,37 @@ describe("VestingWallet", function () {
       1_000_000,
     ]);
 
-    await token.approve(
-      await predictNextContractAddress(owner.address),
+    const vestingWallet = await ethers.deployContract("VestingWallet", [
+      await token.getAddress(),
+      beneficiary.address,
       TOTAL_AMOUNT,
-    );
+      CLIFF_DAYS,
+      DURATION_DAYS,
+    ]);
+    const deployTimestamp = await networkHelpers.time.latest();
+
+    await token.approve(await vestingWallet.getAddress(), TOTAL_AMOUNT);
+
+    await vestingWallet.fund();
+
+    return {
+      token,
+      vestingWallet,
+      owner,
+      beneficiary,
+      stranger,
+      deployTimestamp,
+    };
+  }
+
+  async function deployCleanFixtureNoFund() {
+    const [owner, beneficiary, stranger] = await ethers.getSigners();
+
+    const token = await ethers.deployContract("Token", [
+      "Token",
+      "TKN",
+      1_000_000,
+    ]);
 
     const vestingWallet = await ethers.deployContract("VestingWallet", [
       await token.getAddress(),
@@ -38,8 +58,9 @@ describe("VestingWallet", function () {
       CLIFF_DAYS,
       DURATION_DAYS,
     ]);
-
     const deployTimestamp = await networkHelpers.time.latest();
+
+    await token.approve(await vestingWallet.getAddress(), TOTAL_AMOUNT);
 
     return {
       token,
@@ -250,6 +271,14 @@ describe("VestingWallet", function () {
       );
       expect(await vestingWallet.vestedAmount()).to.equal(TOTAL_AMOUNT);
     });
+
+    it("should return 0 when not funded", async function () {
+      const { vestingWallet } = await networkHelpers.loadFixture(
+        deployCleanFixtureNoFund,
+      );
+
+      expect(await vestingWallet.vestedAmount()).to.be.equal(0);
+    });
   });
 
   describe("release()", function () {
@@ -369,6 +398,17 @@ describe("VestingWallet", function () {
       );
       await vestingWallet.connect(beneficiary).release();
       expect(await token.balanceOf(beneficiary.address)).to.equal(TOTAL_AMOUNT);
+    });
+
+    it("should revert with NotFunded error when not funded", async function () {
+      const { vestingWallet } = await networkHelpers.loadFixture(
+        deployCleanFixtureNoFund,
+      );
+
+      await expect(vestingWallet.release()).to.be.revertedWithCustomError(
+        vestingWallet,
+        "NotFunded",
+      );
     });
   });
 
@@ -513,6 +553,56 @@ describe("VestingWallet", function () {
         await networkHelpers.loadFixture(deployCleanFixture);
       expect(await vestingWallet.vestingEnd()).to.equal(
         BigInt(deployTimestamp) + DURATION_SECONDS,
+      );
+    });
+
+    it("releaseAmount() should return 0 when not funded", async function () {
+      const { vestingWallet } = await networkHelpers.loadFixture(
+        deployCleanFixtureNoFund,
+      );
+
+      expect(await vestingWallet.releasableAmount()).to.be.equal(0);
+    });
+  });
+
+  describe("fund", () => {
+    it("should have correctly funded the owner", async function () {
+      const { token, vestingWallet } = await networkHelpers.loadFixture(
+        deployCleanFixtureNoFund,
+      );
+
+      await expect(vestingWallet.fund())
+        .to.emit(vestingWallet, "Funded")
+        .withArgs(TOTAL_AMOUNT);
+
+      expect(await vestingWallet.funded()).to.be.equal(true);
+      expect(await token.balanceOf(await vestingWallet.getAddress())).to.equal(
+        TOTAL_AMOUNT,
+      );
+    });
+
+    it("should only allow owner to fund", async function () {
+      const { vestingWallet, stranger } = await networkHelpers.loadFixture(
+        deployCleanFixture,
+      );
+
+      await expect(
+        vestingWallet.connect(stranger).fund(),
+      ).to.be.revertedWithCustomError(
+        vestingWallet,
+        "OwnableUnauthorizedAccount",
+      );
+    });
+
+    it("should not fund twice", async function () {
+      // fund is called from fixture already as test setup
+      const { vestingWallet } = await networkHelpers.loadFixture(
+        deployCleanFixture,
+      );
+
+      await expect(vestingWallet.fund()).to.be.revertedWithCustomError(
+        vestingWallet,
+        "AlreadyFunded",
       );
     });
   });

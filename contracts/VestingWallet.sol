@@ -10,6 +10,8 @@ error CliffNotReached();
 error NothingToRelease();
 error VestingAlreadyRevoked();
 error DurationShorterThanCliff();
+error AlreadyFunded();
+error NotFunded();
 
 contract VestingWallet is Ownable {
     event TokensReleased(address indexed beneficiary, uint256 amount);
@@ -17,6 +19,7 @@ contract VestingWallet is Ownable {
         address indexed beneficiary,
         uint256 amountReturnedToOwner
     );
+    event Funded(uint256 amount);
 
     IERC20 public immutable token;
     address public immutable beneficiary;
@@ -26,6 +29,7 @@ contract VestingWallet is Ownable {
     uint256 public immutable totalAmount;
     uint256 public released;
     bool public revoked;
+    bool public funded;
 
     constructor(
         address _token,
@@ -45,20 +49,26 @@ contract VestingWallet is Ownable {
         cliff = block.timestamp + (_cliffDays * 1 days);
         duration = _durationDays * 1 days;
         totalAmount = _totalAmount;
+    }
 
-        token.transferFrom(msg.sender, address(this), _totalAmount);
+    function fund() external onlyOwner {
+        if (funded) revert AlreadyFunded();
+        funded = true;
+        token.transferFrom(msg.sender, address(this), totalAmount);
+        emit Funded(totalAmount);
     }
 
     function vestedAmount() public view returns (uint256) {
+        if (!funded) return 0;
         if (block.timestamp < cliff) return 0;
         if (revoked) return released;
         if (block.timestamp >= start + duration) return totalAmount;
-
         uint256 elapsed = block.timestamp - start;
         return (totalAmount * elapsed) / duration;
     }
 
     function release() external {
+        if (!funded) revert NotFunded();
         if (msg.sender != beneficiary) revert ZeroAddress();
         if (block.timestamp < cliff) revert CliffNotReached();
 
@@ -93,7 +103,7 @@ contract VestingWallet is Ownable {
     }
 
     function releasableAmount() external view returns (uint256) {
-        if (block.timestamp < cliff) return 0;
+        if (!funded || block.timestamp < cliff) return 0;
         return vestedAmount() - released;
     }
 

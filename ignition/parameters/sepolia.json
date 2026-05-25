@@ -1,0 +1,8 @@
+{
+  "VestingWalletModule": {
+    "beneficiary": "0xBf6cC938038ea8aB51E0a9e9280F76E193d7b707",
+    "totalAmount": "200000000000000000000000",
+    "cliffDays": 30,
+    "durationDays": 120
+  }
+}

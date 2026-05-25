@@ -1,3 +1,4 @@
+import hardhatVerify from "@nomicfoundation/hardhat-verify";
 import hardhatEthers from "@nomicfoundation/hardhat-ethers";
 import hardhatToolboxMochaEthersPlugin from "@nomicfoundation/hardhat-toolbox-mocha-ethers";
 import hardhatNetworkHelpersPlugin from "@nomicfoundation/hardhat-network-helpers";
@@ -11,6 +12,7 @@ export default defineConfig({
     hardhatEthers,
     hardhatToolboxMochaEthersPlugin,
     hardhatNetworkHelpersPlugin,
+    hardhatVerify,
   ],
   solidity: {
     profiles: {
@@ -43,5 +45,8 @@ export default defineConfig({
       url: configVariable("SEPOLIA_RPC_URL"),
       accounts: [configVariable("SEPOLIA_PRIVATE_KEY")],
     },
+  },
+  etherscan: {
+    apiKey: process.env.ETHERSCAN_API_KEY ?? "",
   },
 });
